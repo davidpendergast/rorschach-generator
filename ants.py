@@ -1,8 +1,9 @@
 import random
 import time
 
-import sim as sim
-import colors as colors
+import sim
+import colors
+import visualizer
 
 
 class AntSimulator(sim.ParticleSimulator):
@@ -11,7 +12,7 @@ class AntSimulator(sim.ParticleSimulator):
     ANT_LAYER = "ANTS"
     DEAD_ANT_LAYER = "DEAD_ANTS"
 
-    def __init__(self, w, h, initial_spawn_chance=0.01, split_chance=0.01, trail_strength=16):
+    def __init__(self, w, h, initial_spawn_chance=0.01, split_chance=0.01, trail_strength=48):
         sim.ParticleSimulator.__init__(self, w, h)
 
         self.initial_spawn_chance = initial_spawn_chance
@@ -28,7 +29,7 @@ class AntSimulator(sim.ParticleSimulator):
             return colors.BLACK
 
         if self.get_value(AntSimulator.DEAD_ANT_LAYER, xy) > 0:
-            return colors.RED
+            return colors.lerp(colors.PURPLE, colors.BLACK, 0.5)
 
         base_color = colors.WHITE
 
@@ -76,11 +77,10 @@ class AntSimulator(sim.ParticleSimulator):
             write_buffers[AntSimulator.TRAIL_LAYER].add_value(xy, -1)
 
 
-if __name__ == "__main__":
-    ant_sim = AntSimulator(6400, 64)
+def do_simul_async(w, h, n):
+    ant_sim = AntSimulator(w, h)
     ant_sim.request_simulation_async()
 
-    N = 20
     while True:
         time.sleep(0.25)
         if ant_sim.is_simulating():
@@ -90,16 +90,15 @@ if __name__ == "__main__":
             print("step {}:\tfinished with {} ants alive.\n".format(
                 ant_sim.get_timestep(), ant_sim.num_ants_alive()))
 
-            if ant_sim.get_timestep() >= N:
+            if ant_sim.get_timestep() >= n:
                 break
             else:
                 ant_sim.request_simulation_async()
 
-    #for i in range(0, 20):
-    #    alive = ant_sim.num_ants_alive()
-    #    print("t={}:\tants={}".format(ant_sim.get_timestep(), alive))
-    #
-    #    ant_sim.do_simulation()
+
+if __name__ == "__main__":
+    display = visualizer.SimulationDisplay(lambda: AntSimulator(64, 48), name="Ants")
+    display.start()
 
 
 

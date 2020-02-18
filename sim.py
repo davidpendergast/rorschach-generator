@@ -22,10 +22,14 @@ class ParticleSimulator:
             random.seed(rand_seed)
 
         self._simul_lock = threading.Lock()
+        self._color_lock = threading.Lock()
 
         # status stuff
         self._is_simulating = False
         self._pixels_done_count = AtomicInteger(value=0)
+
+    def get_size(self):
+        return self.w, self.h
 
     def add_layer(self, key, min_val=None, max_val=None, is_static=False, initializer_funct=None, default_val=0, out_of_bounds_val=0):
         if self.get_layer(key) is not None:
@@ -99,7 +103,9 @@ class ParticleSimulator:
             with futures.ThreadPoolExecutor() as executor:
                 executor.map(lambda chunk: chunk.simulate(), chunks)
 
-            self._dynamic_layers = write_buffers
+            with self._color_lock:
+                self._dynamic_layers = write_buffers
+
             self._is_simulating = False
             self._pixels_done_count.set(0)
 
@@ -118,6 +124,16 @@ class ParticleSimulator:
 
     def get_color_for_render(self, xy):
         raise NotImplementedError()
+
+    def fetch_colors_safely(self, rect, color_funct):
+        """
+        :param rect: [x, y, w, h]
+        :param color_funct: lambda xy, color -> None
+        """
+        with self._color_lock:
+            for x in range(rect[0], rect[0] + rect[2]):
+                for y in range(rect[1], rect[1] + rect[3]):
+                    color_funct((x, y), self.get_color_for_render((x, y)))
 
 
 class _ParticleLayer:
@@ -176,12 +192,15 @@ class _ParticleLayer:
 
     def get_neighbors(self, xy, valid_only=True, include_diagonals=False, shuffled=False):
         res = []
-        candidates = [(-1, 0), (0, -1), (1, 0), (0, 1)]
+        offsets = [(-1, 0), (0, -1), (1, 0), (0, 1)]
         if include_diagonals:
-            candidates.extend([(-1, -1), (1, -1), (1, 1), (-1, 1)])
-        for c in candidates:
-            if not valid_only or self.is_valid(c):
-                res.append((c[0] + xy[0], c[1] + xy[1]))
+            offsets.extend([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+
+        for offs in offsets:
+            candidate = (xy[0] + offs[0], xy[1] + offs[1])
+            if not valid_only or self.is_valid(candidate):
+                res.append(candidate)
+
         if shuffled:
             random.shuffle(res)
         return res
