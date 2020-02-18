@@ -1,4 +1,5 @@
 import random
+import time
 
 import sim as sim
 import colors as colors
@@ -59,13 +60,13 @@ class AntSimulator(sim.ParticleSimulator):
                     write_buffers[AntSimulator.ANT_LAYER].add_value(neighbors[0], 1)
                     write_buffers[AntSimulator.ANT_LAYER].add_value(neighbors[1], 1)
                     write_buffers[AntSimulator.ANT_LAYER].add_value(xy, -1)
-                    write_buffers[AntSimulator.TRAIL_LAYER].set_value(xy, self.trail_strength)
+                    write_buffers[AntSimulator.TRAIL_LAYER].add_value(xy, self.trail_strength)
 
                 elif len(neighbors) > 0:
                     # we can move
                     write_buffers[AntSimulator.ANT_LAYER].add_value(neighbors[0], 1)
                     write_buffers[AntSimulator.ANT_LAYER].add_value(xy, -1)
-                    write_buffers[AntSimulator.TRAIL_LAYER].set_value(xy, self.trail_strength)
+                    write_buffers[AntSimulator.TRAIL_LAYER].add_value(xy, self.trail_strength)
 
                 else:
                     # we died (._.)
@@ -76,13 +77,29 @@ class AntSimulator(sim.ParticleSimulator):
 
 
 if __name__ == "__main__":
-    ant_sim = AntSimulator(256, 256)
+    ant_sim = AntSimulator(6400, 64)
+    ant_sim.request_simulation_async()
 
-    for i in range(0, 20):
-        alive = ant_sim.num_ants_alive()
-        print("t={}:\tants={}".format(ant_sim.get_timestep(), alive))
+    N = 20
+    while True:
+        time.sleep(0.25)
+        if ant_sim.is_simulating():
+            print("step {}:\t{:.1%} done".format(
+                ant_sim.get_timestep(), ant_sim.get_percent_completed()))
+        else:
+            print("step {}:\tfinished with {} ants alive.\n".format(
+                ant_sim.get_timestep(), ant_sim.num_ants_alive()))
 
-        ant_sim.do_simul()
+            if ant_sim.get_timestep() >= N:
+                break
+            else:
+                ant_sim.request_simulation_async()
+
+    #for i in range(0, 20):
+    #    alive = ant_sim.num_ants_alive()
+    #    print("t={}:\tants={}".format(ant_sim.get_timestep(), alive))
+    #
+    #    ant_sim.do_simulation()
 
 
 
