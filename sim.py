@@ -28,6 +28,8 @@ class ParticleSimulator:
         self._is_simulating = False
         self._pixels_done_count = AtomicInteger(value=0)
 
+        self._parallel = True
+
     def get_size(self):
         return self.w, self.h
 
@@ -46,6 +48,9 @@ class ParticleSimulator:
             self._static_layers[key] = new_layer
         else:
             self._dynamic_layers[key] = new_layer
+
+    def set_parallel(self, val):
+        self._parallel = val
 
     def get_layer(self, key):
         if key in self._static_layers:
@@ -94,17 +99,28 @@ class ParticleSimulator:
             self.t += 1
             self._pixels_done_count.set(0)
 
+            self.pre_update(self.t)
+
             write_buffers = {}
             for layer_key in self._dynamic_layers:
                 write_buffers[layer_key] = self._dynamic_layers[layer_key].make_copy()
 
-            chunks = self._make_chunks(self.t, write_buffers, self._pixels_done_count)
+            if self._parallel:
+                chunks = self._make_chunks(self.t, write_buffers, self._pixels_done_count)
 
-            with futures.ThreadPoolExecutor() as executor:
-                executor.map(lambda chunk: chunk.simulate(), chunks)
+                with futures.ThreadPoolExecutor() as executor:
+                    executor.map(lambda chunk: chunk.simulate(), chunks)
+            else:
+                for y in range(0, self.h):
+                    for x in range(0, self.w):
+                        self.update_layers((x, y), self.t, write_buffers)
+
+                    self._pixels_done_count.inc(amount=self.w)
 
             with self._color_lock:
                 self._dynamic_layers = write_buffers
+
+            self.post_update(self.t)
 
             self._is_simulating = False
             self._pixels_done_count.set(0)
@@ -118,6 +134,12 @@ class ParticleSimulator:
         else:
             pixels_done = self._pixels_done_count.get()
             return pixels_done / (self.w * self.h)
+
+    def pre_update(self, t):
+        pass
+
+    def post_update(self, t):
+        pass
 
     def update_layers(self, xy, t, write_buffers):
         raise NotImplementedError()
@@ -173,6 +195,12 @@ class _ParticleLayer:
         if self.is_valid(xy):
             self._array[xy[0]][xy[1]] = val
 
+    def fill_not_threadsafe(self, val):
+        """don't call this during update_layers, lest ye violate thread safety"""
+        for y in range(0, self.h):
+            for x in range(0, self.w):
+                self.set_value_not_threadsafe((x, y), val)
+
     def add_value(self, xy, val):
         if self.is_valid(xy):
             with self._write_lock:
@@ -190,9 +218,13 @@ class _ParticleLayer:
         else:
             return self._oob_val
 
-    def get_neighbors(self, xy, valid_only=True, include_diagonals=False, shuffled=False):
+    def get_neighbors(self, xy, valid_only=True, include_ortho=True, include_diagonals=False, shuffled=False):
         res = []
-        offsets = [(-1, 0), (0, -1), (1, 0), (0, 1)]
+        offsets = []
+
+        if include_ortho:
+            offsets.extend([(-1, 0), (0, -1), (1, 0), (0, 1)])
+
         if include_diagonals:
             offsets.extend([(-1, -1), (1, -1), (1, 1), (-1, 1)])
 
@@ -203,6 +235,12 @@ class _ParticleLayer:
 
         if shuffled:
             random.shuffle(res)
+        return res
+
+    def sum_neighbor_values(self, xy, func=lambda v: v, valid_only=True, include_ortho=True, include_diagonals=False):
+        res = 0
+        for n in self.get_neighbors(xy, valid_only=valid_only, include_ortho=include_ortho, include_diagonals=include_diagonals):
+            res += func(self.get_value(n))
         return res
 
 

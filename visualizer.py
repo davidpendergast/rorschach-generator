@@ -1,5 +1,6 @@
 import pygame
 import colors
+import time
 
 
 class SimulationDisplay:
@@ -11,14 +12,14 @@ class SimulationDisplay:
         self.simulation = simulation_provider()
 
         self.auto_play = True
-        self.auto_play_delay = 400     # milliseconds
+        self.auto_play_delay = 200     # milliseconds
         self.min_auto_play_delay = 200
         self.max_auto_play_delay = 5000
         self.auto_play_increment = 200
 
         self.show_loading_bar = True
 
-        self.ms_since_last_step = 0
+        self.last_step_time = 0
 
         size = self.simulation.get_size()
 
@@ -30,14 +31,20 @@ class SimulationDisplay:
 
         self.screen = None
 
+        self._stop_at_t = None
+
     def restart_simulation(self):
         print("INFO: restarting simulation")
         self._last_timestep_drawn = -1
+        self.auto_play = True
         self.simulation = self.simulation_provider()
 
     def step_simulation(self):
         self.simulation.request_simulation_async()
-        self.ms_since_last_step = 0
+        self.last_step_time = int(time.time() * 1000.0)
+
+    def set_stop_at_t(self, t_val):
+        self._stop_at_t = t_val
 
     def _draw_simulation(self):
         timestep = self.simulation.get_timestep()
@@ -114,13 +121,18 @@ class SimulationDisplay:
             screen_size = self.screen.get_size()
             pygame.transform.scale(self.simulation_surface, screen_size, self.screen)
 
-            if self.show_loading_bar:
+            cur_time = int(time.time() * 1000)
+
+            if self.show_loading_bar and cur_time - self.last_step_time > 1000:
                 self._draw_loading_bar()
 
             if not self.simulation.is_simulating():
-                self.ms_since_last_step += 1000 // SimulationDisplay.FPS
-                if self.auto_play and self.ms_since_last_step >= self.auto_play_delay:
+                cur_t = self.simulation.get_timestep()
+                if self.auto_play and cur_time - self.last_step_time >= self.auto_play_delay:
                     self.step_simulation()
+
+                    if self._stop_at_t is not None and cur_t + 1 == self._stop_at_t:
+                        self.auto_play = False
 
             clock.tick(SimulationDisplay.FPS)
 
