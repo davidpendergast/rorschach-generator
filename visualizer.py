@@ -10,11 +10,13 @@ class SimulationDisplay:
         self.simulation_provider = simulation_provider
         self.simulation = simulation_provider()
 
-        self.auto_play = False
-        self.auto_play_delay = 1000     # milliseconds
+        self.auto_play = True
+        self.auto_play_delay = 400     # milliseconds
         self.min_auto_play_delay = 200
         self.max_auto_play_delay = 5000
         self.auto_play_increment = 200
+
+        self.show_loading_bar = True
 
         self.ms_since_last_step = 0
 
@@ -55,6 +57,17 @@ class SimulationDisplay:
             else:
                 self._last_timestep_drawn = timestep
 
+    def _draw_loading_bar(self):
+        prog = self.simulation.get_percent_completed()
+        if prog <= 0:
+            return
+        else:
+            screen_size = self.screen.get_size()
+            bar_h = min(4, 8 * screen_size[1] // 480)
+            bar_w = int(prog * screen_size[0])
+
+            pygame.draw.rect(self.screen, colors.RED, [0, screen_size[1]-bar_h, bar_w, bar_h])
+
     def start(self):
         pygame.init()
 
@@ -90,6 +103,9 @@ class SimulationDisplay:
                     elif event.key == pygame.K_LEFT:
                         self.auto_play_delay = max(self.max_auto_play_delay,
                                                    self.auto_play_delay + self.auto_play_increment)
+                    elif event.key == pygame.K_l:
+                        self.show_loading_bar = not self.show_loading_bar
+                        print("INFO: set show_loading_bar={}".format(self.show_loading_bar))
 
             self.screen.fill(colors.WHITE)
 
@@ -97,6 +113,9 @@ class SimulationDisplay:
 
             screen_size = self.screen.get_size()
             pygame.transform.scale(self.simulation_surface, screen_size, self.screen)
+
+            if self.show_loading_bar:
+                self._draw_loading_bar()
 
             if not self.simulation.is_simulating():
                 self.ms_since_last_step += 1000 // SimulationDisplay.FPS
