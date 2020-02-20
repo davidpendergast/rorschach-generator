@@ -112,6 +112,6 @@ def get_pipeline():
 
 
 if __name__ == "__main__":
-    display = visualizer.SimulationDisplay(get_pipeline, name="Rorshach")
+    display = visualizer.SimulationDisplay(get_pipeline, name="Rorschach")
     display.start()
 
