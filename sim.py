@@ -4,11 +4,61 @@ import threading
 import concurrent.futures as futures
 
 
-class ParticleSimulator:
+class Simulator:
+
+    def get_size(self):
+        raise NotImplementedError()
+
+    def is_done(self):
+        raise NotImplementedError()
+
+    def get_timestep(self):
+        raise NotImplementedError()
+
+    def all_points(self):
+        w, h = self.get_size()
+        for y in range(0, h):
+            for x in range(0, w):
+                yield x, y
+
+    def request_simulation_async(self):
+        x = threading.Thread(target=self.do_simulation, args=())
+        x.start()
+
+        return x
+
+    def do_simulation(self):
+        raise NotImplementedError()
+
+    def is_simulating(self):
+        raise NotImplementedError()
+
+    def get_percent_completed(self):
+        raise NotImplementedError()
+
+    def get_color_for_render(self, xy):
+        raise NotImplementedError()
+
+    def fetch_colors_safely(self, rect, color_funct, expected_total_size=None):
+        """
+        :param rect: [x, y, w, h]
+        :param color_funct: lambda xy, color -> None
+        :param expected_total_size: if the simulations size differs from this, nothing will be drawn
+        """
+        if expected_total_size is not None and self.get_size() != expected_total_size:
+            return
+
+        for x in range(rect[0], rect[0] + rect[2]):
+            for y in range(rect[1], rect[1] + rect[3]):
+                color_funct((x, y), self.get_color_for_render((x, y)))
+
+
+class ParticleSimulator(Simulator):
 
     CHUNK_SIZE = (64, 64)
 
     def __init__(self, w, h, rand_seed=None):
+        Simulator.__init__(self)
         self.w = w
         self.h = h
 
@@ -21,17 +71,21 @@ class ParticleSimulator:
         if rand_seed is not None:
             random.seed(rand_seed)
 
-        self._simul_lock = threading.Lock()
         self._color_lock = threading.Lock()
 
         # status stuff
-        self._is_simulating = False
+        self._simul_lock = threading.Lock()
+        self._is_simulating = False  # must only be accessed while simul_lock is held
+
         self._pixels_done_count = AtomicInteger(value=0)
 
         self._parallel = True
 
     def get_size(self):
         return self.w, self.h
+
+    def is_done(self):
+        return False
 
     def add_layer(self, key, min_val=None, max_val=None, is_static=False, initializer_funct=None, default_val=0, out_of_bounds_val=0):
         if self.get_layer(key) is not None:
@@ -66,11 +120,6 @@ class ParticleSimulator:
     def get_timestep(self):
         return self.t
 
-    def all_points(self):
-        for y in range(0, self.h):
-            for x in range(0, self.w):
-                yield x, y
-
     def _make_chunks(self, t, write_buffers, progress_count):
         res = []
         chunk_w, chunk_h = ParticleSimulator.CHUNK_SIZE
@@ -84,49 +133,58 @@ class ParticleSimulator:
         return res
 
     def request_simulation_async(self):
-        if self._simul_lock.locked():
-            print("WARN: there's already a simulation happening, skipping request")
-            return None
+        with self._simul_lock:
+            if self._is_simulating:
+                print("WARN: there's already a simulation happening, skipping request")
+                return None
+            else:
+                self._is_simulating = True
 
-        x = threading.Thread(target=self.do_simulation, args=())
-        x.start()
-
-        return x
+        return super().request_simulation_async()
 
     def do_simulation(self):
         with self._simul_lock:
-            self._is_simulating = True
-            self.t += 1
-            self._pixels_done_count.set(0)
-
-            self.pre_update(self.t)
-
-            write_buffers = {}
-            for layer_key in self._dynamic_layers:
-                write_buffers[layer_key] = self._dynamic_layers[layer_key].make_copy()
-
-            if self._parallel:
-                chunks = self._make_chunks(self.t, write_buffers, self._pixels_done_count)
-
-                with futures.ThreadPoolExecutor() as executor:
-                    executor.map(lambda chunk: chunk.simulate(), chunks)
+            if self.is_done():
+                print("WARN: simulation has finished")
+                self._is_simulating = False
+                return
             else:
-                for y in range(0, self.h):
-                    for x in range(0, self.w):
-                        self.update_layers((x, y), self.t, write_buffers)
+                self._is_simulating = True  # should already be set but just in case...
 
-                    self._pixels_done_count.inc(amount=self.w)
+        self.t += 1
+        self._pixels_done_count.set(0)
 
-            with self._color_lock:
-                self._dynamic_layers = write_buffers
+        self.pre_update(self.t)
 
-            self.post_update(self.t)
+        write_buffers = {}
+        for layer_key in self._dynamic_layers:
+            write_buffers[layer_key] = self._dynamic_layers[layer_key].make_copy()
 
+        if self._parallel:
+            chunks = self._make_chunks(self.t, write_buffers, self._pixels_done_count)
+
+            with futures.ThreadPoolExecutor() as executor:
+                executor.map(lambda chunk: chunk.simulate(), chunks)
+        else:
+            for y in range(0, self.h):
+                for x in range(0, self.w):
+                    self.update_layers((x, y), self.t, write_buffers)
+
+                self._pixels_done_count.inc(amount=self.w)
+
+        with self._color_lock:
+            self._dynamic_layers = write_buffers
+
+        self.post_update(self.t)
+
+        with self._simul_lock:
             self._is_simulating = False
-            self._pixels_done_count.set(0)
+
+        self._pixels_done_count.set(0)
 
     def is_simulating(self):
-        return self._is_simulating
+        with self._simul_lock:
+            return self._is_simulating
 
     def get_percent_completed(self):
         if not self.is_simulating():
@@ -147,15 +205,14 @@ class ParticleSimulator:
     def get_color_for_render(self, xy):
         raise NotImplementedError()
 
-    def fetch_colors_safely(self, rect, color_funct):
+    def fetch_colors_safely(self, rect, color_funct, expected_total_size=None):
         """
         :param rect: [x, y, w, h]
         :param color_funct: lambda xy, color -> None
+        :param expected_total_size: if the simulations size differs from this, nothing will be drawn
         """
         with self._color_lock:
-            for x in range(rect[0], rect[0] + rect[2]):
-                for y in range(rect[1], rect[1] + rect[3]):
-                    color_funct((x, y), self.get_color_for_render((x, y)))
+            super().fetch_colors_safely(rect, color_funct, expected_total_size=expected_total_size)
 
 
 class _ParticleLayer:

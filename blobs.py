@@ -36,6 +36,9 @@ class BlobSimulator(sim.ParticleSimulator):
         self.add_layer(BlobSimulator.FITNESS_CALC_LAYER, default_val=-1, out_of_bounds_val=0, min_val=-1)
         self.add_layer(BlobSimulator.SCENT_LAYER, default_val=0, min_val=0)
 
+    def is_done(self):
+        return self.get_timestep() > self.cooling_time
+
     def get_color_for_render(self, xy):
         base_color = colors.WHITE
         if self.get_value(BlobSimulator.BLOB_LAYER, xy) > 0:
@@ -160,5 +163,4 @@ def get_simulator():
 
 if __name__ == "__main__":
     display = visualizer.SimulationDisplay(get_simulator, name="Blobs")
-    display.set_stop_at_t(get_simulator().cooling_time)
     display.start()

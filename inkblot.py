@@ -13,7 +13,7 @@ DRIED_INK = "dried_ink"
 
 class InkblotSimulator(sim.ParticleSimulator):
 
-    def __init__(self, w, h, wet_ink_func):
+    def __init__(self, w, h, wet_ink_func=None):
         sim.ParticleSimulator.__init__(self, w, h)
 
         self.flow_rate = 0.25
@@ -21,9 +21,12 @@ class InkblotSimulator(sim.ParticleSimulator):
 
         self.max_static_pressure = 0.2
         self.boundary_pressure = 0.15
+        self.max_val_for_render = 1
 
         self.pcnt_to_dry_base = 0.00
         self.pcnt_to_dry_inc_per_step = 0.01
+
+        self._total_wet_ink = 1
 
         self.add_layer(INK, min_val=0, initializer_funct=wet_ink_func)
         self.add_layer(DRIED_INK, min_val=0, default_val=0)
@@ -38,6 +41,12 @@ class InkblotSimulator(sim.ParticleSimulator):
             res += self.boundary_pressure
 
         return res
+
+    def is_done(self):
+        return self._total_wet_ink <= 0
+
+    def pre_update(self, t):
+        self._total_wet_ink = 0
 
     def update_layers(self, xy, t, write_buffers):
         ink_val = self.get_value(INK, xy)
@@ -75,11 +84,17 @@ class InkblotSimulator(sim.ParticleSimulator):
 
             # dry a portion of what's left
             ink_remaining = ink_val - amount_flowed
-            pcnt_to_dry = min(1, random.random() * (self.pcnt_to_dry_base + t * self.pcnt_to_dry_inc_per_step))
-            amount_to_dry = pcnt_to_dry * ink_remaining
+
+            if ink_remaining > 0.1:
+                pcnt_to_dry = min(1, random.random() * (self.pcnt_to_dry_base + t * self.pcnt_to_dry_inc_per_step))
+                amount_to_dry = pcnt_to_dry * ink_remaining
+            else:
+                amount_to_dry = ink_remaining
 
             write_buffers[INK].add_value(xy, -amount_to_dry)
             write_buffers[DRIED_INK].add_value(xy, amount_to_dry)
+
+            self._total_wet_ink += ink_remaining - amount_to_dry
 
     def get_color_for_render(self, xy):
         ink_val = self.get_value(INK, xy)
@@ -90,9 +105,8 @@ class InkblotSimulator(sim.ParticleSimulator):
         dry_base_color = colors.BLACK
 
         if ink_val + dried_val > 0:
-            max_val = 1
-            ink_color = colors.lerp(base_color, wet_base_color, ink_val / max_val)
-            dried_color = colors.lerp(base_color, dry_base_color, dried_val / max_val)
+            ink_color = colors.lerp(base_color, wet_base_color, ink_val / self.max_val_for_render)
+            dried_color = colors.lerp(base_color, dry_base_color, dried_val / self.max_val_for_render)
 
             pcnt_dried = dried_val / (ink_val + dried_val)
             return colors.lerp(ink_color, dried_color, pcnt_dried)
@@ -130,7 +144,7 @@ def get_simulator():
 
     drop_func = get_droplet_square_func((w // 2, h // 2), ink_radius, ink_height)
 
-    res = InkblotSimulator(w, h, drop_func)
+    res = InkblotSimulator(w, h, wet_ink_func=drop_func)
 
     res.max_static_pressure = 0.5
     res.boundary_pressure = 0.65

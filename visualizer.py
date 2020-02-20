@@ -16,35 +16,26 @@ class SimulationDisplay:
         self.min_auto_play_delay = 200
         self.max_auto_play_delay = 5000
         self.auto_play_increment = 200
+        self.has_finished = False
 
         self.show_loading_bar = True
 
         self.last_step_time = 0
 
-        size = self.simulation.get_size()
-
         self._last_timestep_drawn = -1
-        self.simulation_surface = pygame.Surface(size, flags=pygame.SRCALPHA | pygame.HWSURFACE)
+        self.simulation_surface = None
 
         self._name = name
         self._initial_window_size = window_size
 
         self.screen = None
 
-        self._stop_at_t = None
-
     def restart_simulation(self):
         print("INFO: restarting simulation")
         self._last_timestep_drawn = -1
         self.auto_play = True
         self.simulation = self.simulation_provider()
-
-    def step_simulation(self):
-        self.simulation.request_simulation_async()
-        self.last_step_time = int(time.time() * 1000.0)
-
-    def set_stop_at_t(self, t_val):
-        self._stop_at_t = t_val
+        self.has_finished = False
 
     def _draw_simulation(self):
         timestep = self.simulation.get_timestep()
@@ -56,7 +47,7 @@ class SimulationDisplay:
                 self.simulation_surface.set_at(xy, color)
 
             self.simulation_surface.lock()
-            self.simulation.fetch_colors_safely(rect, set_pixel)
+            self.simulation.fetch_colors_safely(rect, set_pixel, expected_total_size=rect_size)
             self.simulation_surface.unlock()
 
             if timestep != self.simulation.get_timestep():
@@ -94,10 +85,6 @@ class SimulationDisplay:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         self.restart_simulation()
-                    elif event.key == pygame.K_SPACE:
-                        print("INFO: manually stepping simulation")
-                        self.step_simulation()
-                        self.auto_play = False
                     elif event.key == pygame.K_ESCAPE:
                         running = False
                         continue
@@ -116,6 +103,11 @@ class SimulationDisplay:
 
             self.screen.fill(colors.WHITE)
 
+            simul_size = self.simulation.get_size()
+            if self.simulation_surface is None or self.simulation_surface.get_size() != simul_size:
+                print("INFO: setting simulation surface size to: {}".format(simul_size))
+                self.simulation_surface = pygame.Surface(simul_size, flags=pygame.SRCALPHA | pygame.HWSURFACE)
+
             self._draw_simulation()
 
             screen_size = self.screen.get_size()
@@ -123,16 +115,17 @@ class SimulationDisplay:
 
             cur_time = int(time.time() * 1000)
 
-            if self.show_loading_bar and cur_time - self.last_step_time > 1000:
-                self._draw_loading_bar()
-
-            if not self.simulation.is_simulating():
-                cur_t = self.simulation.get_timestep()
+            if self.simulation.is_simulating():
+                if self.show_loading_bar and cur_time - self.last_step_time > 1000:
+                    self._draw_loading_bar()
+            elif not self.has_finished:
                 if self.auto_play and cur_time - self.last_step_time >= self.auto_play_delay:
-                    self.step_simulation()
-
-                    if self._stop_at_t is not None and cur_t + 1 == self._stop_at_t:
-                        self.auto_play = False
+                    if self.simulation.is_done():
+                        print("INFO: simulation is done")
+                        self.has_finished = True
+                    else:
+                        self.simulation.request_simulation_async()
+                        self.last_step_time = int(time.time() * 1000.0)
 
             clock.tick(SimulationDisplay.FPS)
 
