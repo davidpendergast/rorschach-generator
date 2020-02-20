@@ -159,7 +159,6 @@ def get_simulator():
 
 
 if __name__ == "__main__":
-
     display = visualizer.SimulationDisplay(get_simulator, name="Blobs")
     display.set_stop_at_t(get_simulator().cooling_time)
     display.start()
