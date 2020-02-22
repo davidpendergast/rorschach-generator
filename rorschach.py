@@ -43,20 +43,20 @@ def get_blob_to_inkblot_mapper(blob_sim):
                             value_xform=lambda blob_val, ink_val: ink_val + (ink_height if blob_val > 0 else 0))
 
     else:
-        x_offs = size[0] // 5
+        x_offs = size[0] // 4
         mid_x = size[0] // 2
         mid_y = size[1] // 2
 
         xfer_func_left = get_rect_mapping_function((mid_x + x_offs, mid_y - size[0] // 2),
                                                    (mid_x + x_offs - size[1], mid_y + size[0] // 2),
-                                                   (0, 0), blob_sim.get_size())
+                                                   (0, 0), blob_sim.get_size(), swap_x_and_y=True)
         xfer_layer_to_layer(blob_layer, ink_layer,
                             l2_xy_to_l1_xy_func=xfer_func_left,
                             value_xform=lambda blob_val, ink_val: ink_val + (ink_height if blob_val > 0 else 0))
 
         xfer_func_right = get_rect_mapping_function((mid_x - x_offs, mid_y - size[0] // 2),
                                                     (mid_x - x_offs + size[1], mid_y + size[0] // 2),
-                                                    (0, 0), blob_sim.get_size())
+                                                    (0, 0), blob_sim.get_size(), swap_x_and_y=True)
         xfer_layer_to_layer(blob_layer, ink_layer,
                             l2_xy_to_l1_xy_func=xfer_func_right,
                             value_xform=lambda blob_val, ink_val: ink_val + (ink_height if blob_val > 0 else 0))
@@ -69,18 +69,25 @@ def get_blob_to_inkblot_mapper(blob_sim):
     return res
 
 
-def get_rect_mapping_function(r1_x1y1, r1_x2y2, r2_x1y1, r2_x2y2):
+def get_rect_mapping_function(r1_x1y1, r1_x2y2, r2_x1y1, r2_x2y2, swap_x_and_y=False):
     print("mapping rect of size={} to {}".format((r1_x2y2[0] - r1_x1y1[0], r1_x2y2[1] - r1_x1y1[1]),
                                                  (r2_x2y2[0] - r2_x1y1[0], r2_x2y2[1] - r2_x1y1[1])))
+
     def _map_it(r1_xy):
         x, y = r1_xy
         x_t = (x - r1_x1y1[0]) / (r1_x2y2[0] - r1_x1y1[0])
         y_t = (y - r1_x1y1[1]) / (r1_x2y2[1] - r1_x1y1[1])
 
+        if swap_x_and_y:
+            temp = x_t
+            x_t = y_t
+            y_t = temp
+
         return (
             round((1 - x_t) * r2_x1y1[0] + x_t * r2_x2y2[0]),
             round((1 - y_t) * r2_x1y1[1] + y_t * r2_x2y2[1])
         )
+
     return _map_it
 
 
