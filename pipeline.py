@@ -29,7 +29,8 @@ class SimulationPipeline(sim.Simulator):
         return self._active_sim.is_done() and len(self._sim_provider_queue) == 0
 
     def get_timestep(self):
-        return self._past_timesteps + self._active_sim.get_timestep()
+        with self._simul_swap_lock:
+            return self._past_timesteps + self._active_sim.get_timestep()
 
     def request_simulation_async(self):
         with self._simul_lock:

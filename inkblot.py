@@ -101,7 +101,7 @@ class InkblotSimulator(sim.ParticleSimulator):
         dried_val = self.get_value(DRIED_INK, xy)
 
         base_color = colors.WHITE
-        wet_base_color = colors.RED
+        wet_base_color = colors.BLACK
         dry_base_color = colors.BLACK
 
         if ink_val + dried_val > 0:
